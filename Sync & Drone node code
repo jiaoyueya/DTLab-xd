@@ -1,0 +1,441 @@
+// Sync-Drone-Nodes
+// created by Ahmad Abdullah (German Jordanian University WSN project, supervised 
+// by Dr. Ala' Khalifeh)
+
+//The programming code below shows the implementation of a Wireless communication between two nodes in the WSN Network. Firstly ,the sync node which consist of 
+// a waspmote microcontroller, xbee radio model and APC220 High Radio frequency transceiver. Secondly the drone node which consist of a waspmote microcontroller and 
+// a APC220 High Radio frequency transceiver. 
+
+// Application Description: we implemented a WSN where the sync node is supposed to collect all the data from the WSN network store it in a SD card, the method 
+// of communication within the network is the xbee radio model,  when the drone is within the range of communication of the WSN the sync node supposed to send the 
+// data to the drone using APC220 High Radio frequency transceiver, when the data reaches the drone node it is stored on a SD card 
+//由Ahmad Abdullah创建（德国约旦大学无线传感器网络项目，由阿拉·哈利法博士监督）
+//下面的编程代码显示了WSN网络中两个节点之间无线通信的实现。
+//首先，同步节点由waspmote微控制器、xbee无线电模型和APC220高频收发器组成。
+//其次，无人机节点由一个waspmote微控制器和一个APC220高频收发器组成。
+//应用描述：我们实现了一个无线传感器网络，其中同步节点应该收集来自无线传感器网络的所有数据并将其存储在SD卡中，网络内的通信方法是xbee无线电模型
+//当无人机在无线传感器网络的通信范围内时，同步节点应该使用APC220高频收发器将数据发送到无人机，当数据到达无人机节点时，它存储在SD卡上
+
+
+
+
+ // Sync Node Waspmote Code    同步节点Waspmote代码
+ 
+#include <WaspXBeeDM.h> // Xbee radio models library
+#include <WaspFrame.h>
+#define DEF_BAUD_RATE 9600 //Define the BAUD Rate which will be used for the communication with the drone node 定义用于与无人机节点通信的波特率
+char filename[]="FILE2.TXT"; //Define the text file name where the data will be stored in the SD card 定义将数据存储在SD卡中的文本文件名
+uint8_t sd_answer;  //定义sd的应答
+int32_t numLines=0; // Integer counter which will be used later to count the number of frames stored in the SD Card 整数计数器，稍后用于计算存储在SD卡中的帧数
+uint8_t error; //Error is integer variable that will be used to check if we are facing any  errors in receiving the packets from nearby nodes Error是一个整数变量，用于检查从附近节点接收数据包时是否遇到任何错误
+uint8_t answer[256];// 定义应答数组
+char response[256]; // 定义响应
+char x[256];
+bool conf = false; //Boolian变量，稍后将用于控制节点之间的通信
+bool flag1 = false;//判断flag
+int i,f,n,c = 0;
+int m =-1;
+
+// Setup the Waspmote Micontroller 安装Waspmote微控制器
+
+void setup()  // 定义 setup
+{
+  settingup(); 
+}
+
+// Main Part of the code (Operantional Part)  主代码部分
+
+void loop()
+{
+  if(!conf)
+  {
+  
+  error = xbeeDM.receivePacketTimeout( 3000 ); //Check and receives packers from the nearby nodes   检查并接收来自附近节点的封隔器
+
+  // check what data we received from the other nodes   检查我们从另一个节点收到的数据
+  if( error == 0 )   //如果错误为0
+  {
+    // Print the data received from other nodes and stored in the buffer  打印从其他节点接收并存储在缓冲区中的数据
+    
+    USB.print(F("Data: "));   //打印
+    USB.println( xbeeDM._payload, xbeeDM._length);
+    
+    // Print the lengthe of data received  打印接收到的数据长度
+    
+    USB.print(F("Length: "));  
+    USB.println( xbeeDM._length,DEC);
+    
+    //Save the data received in array  将接收到的数据保存在数组中
+    for(uint8_t i = 0; i < xbeeDM._length; i++)
+    {  
+     x[i] = xbeeDM._payload[i]; 
+     }
+    // Save the data in the SD File   将数据保存在SD文件中
+     
+    sd_answer = SD.appendln(filename,x); 
+  }
+  
+   // This else refers the if statment of the error, if the error wasn't 0 means that we have a packet timeout in the network and we couldn't receive the packet
+   therefore prinited the following message to indicate the error 如果错误不是0，则表示网络中存在数据包超时，无法接收数据包。因此，请发送以下消息以指示错误
+   else
+  {
+    // Print error message:
+    /*
+     * '7' : Buffer full. Not enough memory space  缓冲区满，内存空间不足
+     * '6' : Error escaping character within payload bytes 转义有效负载字节内的字符时出错
+     * '5' : Error escaping character in checksum byte 对校验和字节中的字符进行转义时出错
+     * '4' : Checksum is not correct    校验和不正确
+     * '3' : Checksum byte is not available 校验和未知
+     * '2' : Frame Type is not valid 框架类型无效
+     * '1' : Timeout when receiving answer   收到应答时超时
+    */
+    USB.print(F("Error receiving a packet:"));
+    USB.println(error,DEC);     
+  }
+ 
+  //show  the sd card file 显示sd卡文件
+  SD.showFile(filename);
+  delay(200);
+  numLines = SD.numln(filename); // Indicator of how many frames stored in the SD Card  SD卡中存储了多少帧的指示器
+  // Reset the buffer to ensure that the sync node is always searching for the drone node  重置缓冲区以确保同步节点始终在搜索无人机节点
+  serialFlush(UART1);  //等待串口数据发送结束函数
+  memset(answer, 0x00, sizeof(answer) ); //memset作用是将某一块内存中的内容全部设置为指定的值
+  // Print the number of frames stored in the SD card  打印存储在SD卡中的帧数
+  USB.println("number of stored frames is :  ");
+  USB.println(numLines);
+  //Start looking for the drone only after we saved 60 or more packets in the sd card successfully  只有在我们成功地在sd卡中保存了60个或更多数据包后，才能开始寻找无人机
+  if(numLines > 60)
+  {
+  receivereq();   //c++
+  }
+
+ //Initial assumption that the drone, therefore we need to check if the drone has arrived  最初的假设是无人机，因此我们需要检查无人机是否已经到达
+ if(conf){
+   m++;
+   sendframe();   //发送帧
+   receiveack();  //接收应答信息
+   delay(1500);  
+   if(m==numLines){
+     sendLastframe(); //发送最终的帧
+     m=-1;
+     conf=false; //终止
+     sleepnode();//休眠节点 
+   }
+  }
+}
+
+
+//Looking for the drone node- start thr handshaking process  寻找无人机节点-启动thr握手过程
+
+void receivereq()
+{
+
+  Utils.setMuxAux2(); //aux1 for hc12, aux2 for hf
+  delay(500);
+  USB.println("listening for 12s...");
+  memset(answer, 0x00, sizeof(answer) );
+  i=0;
+  c=0;
+  while(!serialAvailable(1) && c < 120)
+  {
+  delay(100);
+  c++;
+  }
+
+  //Read the UART1 buffer, connected to aux2(hf) 读取UART1缓冲区，连接到aux2（hf）
+  while(serialAvailable(1)) 
+  {
+    answer[i]=serialRead(1);
+    i++;
+    delay(10);
+  }
+  for (uint8_t a = 0; a < i; a++)
+  {
+    USB.print(answer[a]); 
+  }
+  USB.println();
+  for(uint8_t o = 0; o < i; o++) 
+  {
+  response[o] = (char)answer[o];
+  }
+  //check  if drone was detected 检查是否检测到无人机
+  if(response[0] == '1' && response[1] == '2' && response[2] == '3' && response[3] == '4')
+  { 
+  USB.println("pass matched, drone detected!");
+  conf = true;   //change states, drone is detected  改变状态，探测到无人机
+  Utils.setMuxAux1(); //turn the uart to hc12 将uart转到hc12
+  response[0] = '\0'; //reset response to empty string in order to prepare to receive ack from drone node 将响应重置为空字符串，以便准备从无人机节点接收ack
+  delay(500);
+ //send response back to the drone 3 times, 2sec between each time 将响应发送回无人机3次，每次间隔2秒
+  f or(int f = 0; f < 3; f++)
+  { 
+    printString("4321\n", 1);
+    USB.println("4321");
+    delay(2000); 
+  }
+  }
+  delay(1500);
+}
+
+// Send frames to the drone node   向无人机节点发送帧
+
+void sendframe()
+
+{
+    Utils.setMuxAux1(); 
+    delay(100);
+    // read new line (it is stored in SD.buffer) 读取新行（它存储在SD.buffer中）
+    SD.catln(filename,m,1);
+    printString(SD.buffer, 1); //send the frame from the sd card to drone node  将sd卡中的帧发送到无人机节点
+     delay(1200);
+
+}
+
+// Send the last frames to the drone node 将最后一帧发送到无人机节点
+void sendLastframe()
+{
+    Utils.setMuxAux1(); 
+    delay(500);
+    printString("last frame was sent from network 1, going to sleep ...", 1); //send this string to 将此字符串发送到
+    USB.println("last frame was sent from network 1, going to sleep ...");  //indicate that we finished transmission 表明我们完成了传输
+
+}
+
+
+void receiveack()
+{
+   Utils.setMuxAux2(); //aux1 for hc12, aux2 for hf
+   delay(500);
+   USB.println("listening...");
+   memset(answer, 0x00, sizeof(answer) );
+   i=0;
+   n=0;
+   while(!serialAvailable(1) && n < 70){
+   delay(100);
+   n++;
+}
+
+USB.println(n);
+
+while(serialAvailable(1))
+{
+   answer[i]=serialRead(1);
+   i++;
+   delay(10);
+}
+
+USB.println("response as bytes: ");
+
+for (uint8_t a = 0; a < i; a++)
+{
+    USB.print(answer[a]); //typing out the response  输入答案
+}
+
+USB.println();
+//response[0] = '\0';
+
+USB.println("response as chars: ");
+
+//convert the response from bytes to chars 将响应从字节转换为字符
+
+for(uint8_t o = 0; o < i; o++) 
+{
+response[o] = (char)answer[o];
+}
+
+USB.println(response);
+
+if(n==70 || (response[0] == '1' && response[1] == '2' && response[2] == '3' && response[3] == '4'))
+{
+  conf=false;  //未探测到无人机，改变状态
+  USB.println("timeout 7s reached or drone in wrong loop switching back to listening ");  //达到超时7秒或无人机进入错误循环切换回监听
+}
+response[0] = '\0';
+}
+
+
+//Microcontroller setup function  微控制器设置功能
+
+void settingup(){
+ 
+  RTC.ON();
+  ACC.ON();
+  USB.ON();
+  PWR.powerSocket(UART1, HIGH); //powering up 能量启动
+  PWR.setSensorPower(SENS_3V3, SENS_ON); //set hc12 and hf on
+  WaspUART uart = WaspUART();  //uart串口
+  uart.setUART(UART1);
+  delay(500);
+  uart.setBaudrate(9600);//设置波特率（调制速率）
+  delay(500);
+  Utils.setMuxAux2(); //aux1 for hc12, aux2 for hf
+  delay(500);
+  serialFlush(UART1);
+  uart.beginUART();
+  delay(1500);
+  SD.ON();
+  // Delete the old files  删除旧文件
+  sd_answer = SD.del(filename);
+  if( sd_answer == 1 )
+  {
+  USB.println(F("file deleted"));
+  }
+ else
+ {
+ USB.println(F("file NOT deleted"));
+ }
+ // Create new file 创建新文件
+ sd_answer = SD.create(filename);
+ if( sd_answer == 1 )
+ {
+ USB.println(F("file created"));
+ }
+ else
+ {
+ USB.println(F("file NOT created"));
+ }
+ xbeeDM.ON();
+ xbeeDM.writeValues();
+ }
+ 
+//Sleep mode function  休眠模式功能
+
+
+void sleepnode()
+{
+ USB.println("finished sending sd card file, entering deep sleep mode");
+ PWR.deepSleep("00:00:00:17", RTC_OFFSET, RTC_ALM1_MODE1,
+ SENSOR_ON);
+ USB.ON();
+ USB.println(F("wake up\n"));
+ if (intFlag & RTC_INT)
+ {
+ USB.println(F("-------------------------------------"));
+ USB.println(F("RTC INT captured"));
+ USB.println(F("-------------------------------------"));
+ // clear flag
+ intFlag &= ~(RTC_INT);
+settingup();
+ }
+}
+
+
+
+
+
+// DRONE NODE CODE
+// DRONE NODE CODE 无人机节点代码
+
+// including the SD library 包括SD图书馆
+
+#include <SD.h>
+#include <SPI.h>
+
+String Data; // Later on this string will be used to store data on  稍后，该字符串将用于在上存储数据
+File file;  // Create a file on the drone SD card   在无人机SD卡上创建一个文件
+char myFileName[] = "test.txt"; // Name the file on the SD card  给SD卡上的文件命名
+String pass = "1234\n";// Password used for the handshaking process  用于握手过程的密码
+String Data2;
+String Data3;
+String Data4;
+String ack = "ACK\n";
+int conf = 0;
+int m = 0;
+
+// Set Up the drone micro controller  设置无人机微控制器
+void setup() {
+pinMode(10, OUTPUT);  
+digitalWrite(10, HIGH);
+Serial3.begin(9600); //hc12 link
+Serial2.begin(9600); //hf link
+Serial.begin(9600); //Usb 
+pinMode(53, OUTPUT); //slave select for sd card sd卡的从属选择
+digitalWrite(53, LOW); //making sure sd card is selected 确保选择了sd卡
+pinMode(SS, OUTPUT); // Sd card Pin Sd卡密码
+if(!SD.begin(53))Serial.println("SD card not initialized");  //incase sd card is not working 万一sd卡坏了
+else Serial.println("SD card initialized");
+}
+void loop()
+{
+if(conf==0)sendandlisten();  //drone searching for sync nodes 无人机搜索同步节点
+
+if(conf==1){
+ReadFrameandSendAck(); //receiving from sync node 从同步节点接收帧和应答消息
+delay(3500);
+if(m==3){
+  conf=0; 
+  m=0;
+  file.close(); //close file after reception is complete  接收完成后关闭文件
+}
+}
+}
+
+// Listening to the network-Searching for the network  收听网络-搜索网络
+
+void sendandlisten()  //定义收听
+{
+Serial2.print(pass); 
+Serial.println(pass);
+delay(2000);    
+Data2 = Serial3.readString();
+Serial.println("received...");
+Serial.print(Data2);
+//  Detecting the Network 删除网络
+if(Data2 == "4321\n") 
+  {                      
+   Serial.println("Correct response, network detected");
+   file = SD.open(myFileName, FILE_WRITE);    //open a file
+   file.println("----new initialization---"); //add a new line indicating a new session 添加指示新会话的新行
+   file.flush(); //save the file  保存文件
+   conf++; //change state to network not found to network found  将“未找到网络”状态更改为“已找到网络”
+  }   
+ }
+
+// communication process between the sync node and drone node  同步节点和无人机节点之间的通信过程
+void ReadFrameandSendAck()
+{
+if(Serial3.available()){   
+delay(200);
+Data4 = Serial3.readString();
+Serial.println("from HF: ");
+Serial.println(Data4);
+file.println(Data4);  
+file.flush();  
+Serial.println("sending ack "); 
+delay(500);
+Serial2.print(ack); 
+m = 0;
+}
+else {
+  m++; //we stopped receiving frames, at m=3 we'll go back to sending requests  我们停止接收帧，在m=3时，我们将返回发送请求
+  Serial.println("no new frame received ");
+}
+}
+
+
+// Matlab Parsing code to parse the frames (data) collected by the drone in the SD card Matlab解析代码，解析SD卡中无人机采集的帧（数据）
+
+function [t] = parse(a) 
+sz = size(a);
+edit exp.txt;
+fileID = fopen('exp.txt','w');
+for i=1:1:sz(2)
+a1 = string(a(1,i));
+           str1 = extractBetween(a1,'TC:','#HUM');
+           str2 = extractBetween(a1,'HUM:','#PRES');
+           str3 = extractBetween(a1,'PRES:','#PIR');
+           str4 = extractBetween(a1,'PIR:','#');
+           fprintf(fileID,'Temperature : ');
+           fprintf(fileID,'%s \n',str1);
+           fprintf(fileID,'Humidity : ');
+           fprintf(fileID,'%s \n',str2);
+           fprintf(fileID,'Pressure : ');
+           fprintf(fileID,'%s \n',str3);
+           fprintf(fileID,'Motion detection : ');
+           fprintf(fileID,'%s \n',str4);
+           fprintf(fileID,'--------------------------- \n');
+end
+fclose(fileID);
+return
+
+ 
